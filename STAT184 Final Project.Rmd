@@ -1,0 +1,323 @@
+---
+title: "Final Project Report"
+name: "Zhaoxi Chang"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+### Guiding Question
+
+If England soccer clubs play against Spain soccer clubs one by one, which country's teams are more like to win?
+
+```{r}
+library(readr)
+library(tidyverse)
+library(ggplot2)
+library(DataComputing)
+library(tidyr)
+```
+
+
+### Become acquainted with your data sources:
+I found the data tables from data.world and datahub on the internet.
+
+Data table 1: https://data.world/chas/2018-2019-premier-league-matches
+
+Data table 2: https://datahub.io/sports-data/spanish-la-liga#resource-season-1819
+
+Chas Peacock collected the data 1.
+
+Datahub community collected the data 2.
+
+
+Both data tables were collected last year.
+
+
+A case represents a single match result. There are 380 cases in each table.
+
+
+Variables I plan to use: HomeTeam 
+                         AwayTeam
+                         
+                         FTR: Full-Time-Result
+                         
+                         FTHG: Full time home goal
+                         
+                         FTAG: Full time away goal
+                         
+                         HS: Home shots
+                         
+                         AS: Away shots
+                         
+                         
+These variables begin with a capital letter because they are from the original data. All the following varibles I created begin with lowercase letter and their meanings are clear.
+
+Other notes: Since England soccer league and Spain soccer league have the same number of teams(20), there are also equal number of games(10) in each round, they would have the same cases. Accordingly, it is reasonable to investigate winning probability from those two leagues.
+
+### Data Access
+```{r}
+England = read.csv("2018-2019.csv",header = TRUE) # access the England data.
+England %>%
+  head(10) # briefly view the data table
+webURL <- "https://datahub.io/sports-data/spanish-la-liga/r/season-1819.csv"
+Spain <- read_csv(webURL) # access the Spain data
+Spain %>%
+  head(10)
+glimpse(England) # learn the England data table, useful variables have been explained in the notes. Spain data is similar, but it contains too much unuseful variables and is confusing to inspect.
+
+nrow(England) # calculate the number of cases
+nrow(Spain)
+```
+
+
+### Narrative
+Step1: Find total points by each team in England.
+
+Reasoning: Total points got by each team is a significant factor for calculating the winning probability, and also it could measure the points performance, so it is related to the research question. In the following part, I use several variables to calculate total season points of each team.
+
+```{r}
+HomeGamePointsEng <- # This part is to calculate the home game points by each team in England.
+  England %>%
+  group_by(HomeTeam,FTR) %>%
+  summarise(homeresult = n()) %>%
+  spread(key = FTR, value = homeresult, fill = 0) %>% # spread the data so the results in the same level are in the same variable
+  mutate(homepointsEng = H*3 + D) # H:home win(3 points), D:draw(1 point) A:away win(0 point), by using H*3 + D to calculate home game points
+
+AwayGamePointsEng <- # This part is to calculate the away game points by each team in England.
+  England %>%
+  group_by(AwayTeam,FTR) %>%
+  summarise(awayresult = n()) %>%
+  spread(key = FTR, value = awayresult, fill = 0) %>%
+  mutate(awaypointsEng = A*3+D)
+
+SeasonPointsEngx <- 
+  HomeGamePointsEng %>%
+  select(HomeTeam, homepointsEng) %>%
+  left_join(AwayGamePointsEng %>%
+              select(AwayTeam, awaypointsEng), by = c("HomeTeam" = "AwayTeam"))
+# by joinging home game and away game, I can calculate total points because a team have equal number of games for both home and away.
+
+SeasonPointsEng <- # This part is to calculate the England soccer league total points ranking.
+  SeasonPointsEngx %>%
+  mutate(totalpointsEng = homepointsEng + awaypointsEng) %>%
+  rename(teamEng1 = HomeTeam) %>%
+  select(teamEng1, totalpointsEng) %>%
+  arrange( desc(totalpointsEng) ) 
+
+SeasonPointsEng %>%
+  head(6) # briefly view the England Season points data.
+
+```
+
+### Narrative
+Step2: Find goal probability by each team in England.
+
+Reasoning: Goal probability is another significant factor for calculating winning probability. In a soccer game, the goal probability is calculated by total goals divided by total shots. In the following part, I use several variables to calculate the goal probability for each team.
+```{r}
+HomeAttackEng <- # This part is to calculate total shots number and total goal for all home games by each team
+  England %>%
+  group_by(HomeTeam) %>%
+  summarise(homegoals = sum(FTHG), homeshots = sum(HS) )
+
+AwayAttackEng <- # This part is to calculate total shots number and total goal for all away games by each team
+  England %>%
+  group_by(AwayTeam) %>%
+  summarise(awaygoals = sum(FTAG), awayshots = sum(AS))
+
+SeasonAttackEngx <-
+  HomeAttackEng %>%
+  left_join(AwayAttackEng, by = c("HomeTeam" = "AwayTeam")) # by joining two tables, I can calculate total shots and total goals by each team
+
+goalprob <- function(x, y){ # create a function to calculate the goal probability by each team in England
+  x / y
+}
+SeasonAttackEng <- # This part is to find attack statistics for all teams
+  SeasonAttackEngx %>%
+  mutate(totalgoalsEng = homegoals + awaygoals, totalshotsEng = homeshots+awayshots) %>%
+  rename(teamEng2 = HomeTeam) %>%
+  select(teamEng2, totalgoalsEng, totalshotsEng) %>%
+  mutate(goalprobEng = goalprob(totalgoalsEng, totalshotsEng))
+
+SeasonEng <- # by joining two data tables, I get a combination of points and attack statistics in a season
+  SeasonPointsEng %>%
+  left_join(SeasonAttackEng, by = c("teamEng1" = "teamEng2"))
+
+SeasonEng %>% # briefly view England season data
+  head(6)
+```
+
+### Narrative
+Step3: Find total points by each team in Spain.
+
+Reasoning: The same purpose as finding the total points by each team in England, the following steps are to calculate Spain soccer team situations
+```{r}
+HomeGamePointsSpa <- # This part is to calculate the home game points by each team in Spain.
+  Spain %>%
+  group_by(HomeTeam, FTR) %>%
+  summarise(homeresult = n()) %>%
+  spread(key = FTR, value = homeresult, fill = 0) %>% # spread the data so the results in the same level are in the same variable
+  mutate(homepointsSpa = H*3 + D) # H:home win(3 points), D:draw(1 point) A:away win(0 point), by using H*3 + D to calculate home game points
+
+AwayGamePointsSpa <- # This part is to calculate the away game points by each team in Spain.
+  Spain %>%
+  group_by(AwayTeam, FTR) %>%
+  summarise(awayresult = n()) %>%
+  spread(key = FTR, value = awayresult, fill=0) %>%
+  mutate(awaypointsSpa = A*3+D)
+
+SeasonPointsSpax <-
+  HomeGamePointsSpa %>%
+  select(HomeTeam, homepointsSpa) %>%
+  left_join(AwayGamePointsSpa %>%
+              select(AwayTeam, awaypointsSpa), by = c("HomeTeam" = "AwayTeam"))
+# by joinging home game and away game, I can calculate total points because a team have equal number of games for both home and away.
+
+SeasonPointsSpa <- # This part is to calculate the Spain soccer league total points ranking.
+  SeasonPointsSpax %>%
+  mutate(totalpointsSpa = homepointsSpa + awaypointsSpa) %>%
+  rename(teamSpa1 = HomeTeam) %>%
+  select(teamSpa1, totalpointsSpa) %>%
+  arrange( desc(totalpointsSpa) )
+
+SeasonPointsSpa %>% # briefly view the Spain Season points data.
+  head(6)
+```
+
+### Narrative
+Step4: Find goal probability by each team in Spain.
+
+Reasoning: The same purpose calculating the goal probability in England. The following steps are to calculate Spain soccer team goal probability.
+```{r}
+HomeAttackSpa <- # This part is to calculate total shots number and total goal for all home games by each team
+  Spain %>%
+  group_by(HomeTeam) %>%
+  summarise(homegoals = sum(FTHG), homeshots = sum(HS))
+
+AwayAttackSpa <- # This part is to calculate total shots number and total goal for all away games by each team
+  Spain %>%
+  group_by(AwayTeam) %>%
+  summarise(awaygoals = sum(FTAG), awayshots = sum(AS))
+
+SeasonAttackSpax <-
+  HomeAttackSpa %>%
+  left_join(AwayAttackSpa, by = c("HomeTeam" = "AwayTeam")) # by joining two tables, I can calculate total shots and total goals by each team
+
+goalprob <- function(x, y){
+  x / y
+}
+
+SeasonAttackSpa <- # This part is to find attack statistics for all teams
+  SeasonAttackSpax %>%
+  mutate(totalgoalsSpa = homegoals + awaygoals, totalshotsSpa = homeshots + awayshots) %>%
+  rename(teamSpa2 = HomeTeam) %>%
+  select(teamSpa2, totalgoalsSpa, totalshotsSpa)%>%
+  mutate(goalprobSpa = goalprob(totalgoalsSpa, totalshotsSpa))
+
+SeasonSpa <- 
+  SeasonPointsSpa %>%
+  left_join(SeasonAttackSpa, by = c("teamSpa1" = "teamSpa2")) # by joining two data tables, I get a combination of points and attack statistics in a season
+
+SeasonSpa %>% 
+  head(6) # briefly view Spain season data
+  
+```
+
+### Narrative
+Prepare the glyph ready data for the two graphs
+
+Reasoning: the glyph ready data is neccessary for drawing relevant data visualization graphs. The readydata1 shows the winning probability of each team. The readydata2 shows the total shots of each team because more shots account for more aggressive soccer style, which leads to a better chance of winning.
+
+```{r}
+winprobx <- function(a, b){ # create a function to calculate the winning probability 
+  (a / 114) * 0.5 + b * 0.5
+}
+
+CompetitionData <- # Since both countries have equal number of teams, it is simple to directly combine two data tables of each country.
+  cbind(SeasonEng, SeasonSpa)
+
+CombA <- # This part is to calculate winning probability for both countries' teams
+CompetitionData %>%
+  mutate(winprobEng = winprobx(totalpointsEng, goalprobEng)) %>%
+  mutate(winprobSpa = winprobx(totalpointsSpa, goalprobSpa)) %>%
+  select(teamEng1, teamSpa1, winprobEng, winprobSpa)
+
+Comb1A <-
+  CombA %>%
+  pivot_longer(cols = c(winprobEng, winprobSpa), names_to = "probcountry", values_to = "winprob") %>% # make the probability for each team one by one, the country here can be neglected beacuse only probability is useful.
+  select(winprob)
+
+Comb2A <-
+  CombA %>%
+  pivot_longer(cols = c(teamEng1, teamSpa1), names_to = "country", values_to = "name") %>% # spread the data to classify each team by their country
+  select(name, country)
+  
+num <- c(1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13,14,14,15,15,16,16,17,17,18,18,19,19,20,20)
+number = data.frame(num) # create a data frame to represent the ranking
+
+readydata1 <- # build the glyph ready data for the first graph
+  cbind(number, Comb2A, Comb1A[,2])
+
+readydata1
+
+CombB <- 
+  CompetitionData %>%
+  select(teamEng1, teamSpa1, totalshotsEng, totalshotsSpa)
+
+Comb1B <-
+  CombB %>%
+  pivot_longer(cols = c(totalshotsEng, totalshotsSpa), names_to = "shotcountry", values_to = "shots") %>% # make the shots for each team one by one, the country here can be neglected beacuse only shots is useful.
+  select(shots)
+
+Comb2B <-
+  CombB %>%
+  pivot_longer(cols = c(teamEng1, teamSpa1), names_to = "country", values_to = "name") %>%
+  select(name, country)
+  
+readydata2 <- # build the glyph ready data for the second graph
+  cbind(number, Comb2B, Comb1B[,2])
+  
+readydata2 
+  
+```
+
+### Create some informative plots and summary statistics 
+
+```{r}
+readydata1 %>% # create a graph to compare winning probability for teams in England and Spain if they play against each other one by one.
+  ggplot(aes(x = num, y = winprob)) +
+  geom_line() +
+  geom_point(color = "black") +
+  aes(color = country) +
+  xlab("Ranking") +
+  ylim(0.1, 0.5) +
+  ylab("Win Probability")
+
+readydata2 %>% # create a graph to analyze the teams' attack characteristics in England and Spain
+  ggplot(aes(x = num, y= shots)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(~ country) +
+  xlab("Ranking") +
+  ylim(300, 700)+
+  ylab("Win Probability")
+
+
+# Analysis for graphs are in the next part.
+```
+
+### Describe observations and intuition about the research question
+
+Note: I assume that England teams play against Spain teams one by one. For example: England champion vs. Spain champion ... England last place vs. Spain last place.
+
+From the first plot, I find that for top ranking teams(1 to 6, top six teams in each league will have a chance to participate in European League), England teams have a higher winning probability than Spain teams. For teams in the middle, the winning probability is really close for two countries' teams. However, for demotion area 18 to 20 (the last three teams in each league will get a demotion to the lower level league), England teams are more likely to lose. Those observations show that England top teams might beat Spain top teams, whereas opposite for demotion teams.
+
+From the second plot, I find that England soccer teams' total shots have a much bigger difference between top ranking teams and demotion teams. However, for Spain soccer teams, there is not much differences. Those observations also show that England top teams are more aggressive, which leads to a better chance of winning. Also, it is opposite for demotion teams.
+
+
+
+
+
+
+
+
